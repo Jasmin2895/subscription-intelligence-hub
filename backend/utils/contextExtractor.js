@@ -23,7 +23,9 @@ function extractContextHighlights(
   textBody,
   ownerEmail,
   emailSubject,
-  emailMessageID
+  emailMessageID,
+  financialItemID,
+  productName
 ) {
   if (!textBody) return [];
 
@@ -101,6 +103,8 @@ function extractContextHighlights(
           sentiment: sentiment, // Store the sentiment
           source_email_subject: emailSubject,
           source_email_message_id: emailMessageID,
+          financial_item_id: financialItemID,
+          product_name: productName,
         });
       }
     }

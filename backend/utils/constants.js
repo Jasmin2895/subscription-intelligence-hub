@@ -1,4 +1,4 @@
-const KNOWN_SERVICES = [
+export const KNOWN_SERVICES = [
   "Netflix",
   "Spotify",
   "Amazon",
@@ -24,7 +24,7 @@ const KNOWN_SERVICES = [
   "Substack",
 ]; // Add more as you test
 
-const CONTEXT_INDICATOR_KEYWORDS = [
+export const CONTEXT_INDICATOR_KEYWORDS = [
   "reason",
   "decide",
   "issue",
