@@ -14,9 +14,9 @@ code {
 }
 
 body {
+  min-width: 100vw;
   margin: 0;
   color: #e0e6f1; /* Primary Text */
-  display: flex;
   justify-content: center;
   align-items: center;
   min-height: 100vh;
@@ -40,7 +40,7 @@ body {
 }
 
 .container.dashboard {
-  max-width: 100%; /* As per previous request */
+  max-width: 100vw; /* As per previous request */
 }
 
 h1,

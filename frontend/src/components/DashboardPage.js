@@ -173,8 +173,8 @@ function DashboardPage() {
     financialItems.forEach((item) => {
       if (item.amount_display != null) {
         let determinedCategory = "Unknown";
-        if (item.category) {
-          determinedCategory = item.category;
+        if (item.vendor_name) {
+          determinedCategory = item.vendor_name;
         }
         categoryExpenses[determinedCategory] =
           (categoryExpenses[determinedCategory] || 0) +
