@@ -19,16 +19,16 @@ import {
 const API_URL = "http://localhost:3001";
 
 const PIE_COLORS = [
-  "#25C7D9",
-  "#F25E7A",
-  "#4DD964",
-  "#F2B705",
-  "#A67AF2",
-  "#F28322",
-  "#05AFF2",
-  "#D93D66",
-  "#6BF2A3",
-  "#F2D06B",
+  "#00A9E0", // Vivid Blue
+  "#FF6F61", // Living Coral/Bright Salmon
+  "#6A0DAD", // Deep Purple
+  "#3DDC97", // Bright Mint Green
+  "#FFD700", // Gold
+  "#40E0D0", // Turquoise
+  "#FF7F50", // Coral
+  "#9370DB", // Medium Purple
+  "#20B2AA", // Light Sea Green
+  "#FFC0CB", // Pink
 ];
 
 // Helper function to calculate next renewal date (can be outside component or in a utils file)
@@ -160,7 +160,7 @@ function DashboardPage() {
     const categoryExpenses = {};
     financialItems.forEach((item) => {
       if (item.amount_display != null) {
-        let determinedCategory = item.category || item.vendor_name || "Unknown"; // Prioritize category field
+        let determinedCategory = item.category || item.category || "Unknown"; // Prioritize category field
         categoryExpenses[determinedCategory] =
           (categoryExpenses[determinedCategory] || 0) +
           parseFloat(item.amount_display || 0);
@@ -347,9 +347,9 @@ function DashboardPage() {
                 >
                   <div className="item-header">
                     <h3>
-                      {item.vendor_name || "Unknown Vendor"}
+                      {item.category || "Unknown Category"}
                       {item.product_name &&
-                      item.product_name !== item.vendor_name && // Simplified condition
+                      item.product_name !== item.category && // Simplified condition
                       item.product_name !==
                         `Subscription - ${item.billing_cycle}` &&
                       item.product_name !== "Purchase"
