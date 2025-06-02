@@ -1,12 +1,12 @@
 // backend/utils/contextExtractor.js
 const natural = require("natural");
 const sentenceTokenizer = new natural.SentenceTokenizer();
-const { KNOWN_SERVICES, CONTEXT_INDICATOR_KEYWORDS } = require("./constants");
+const { KNOWN_SERVICES, CONTEXT_INDICATOR_KEYWORDS } = require("./constants"); // Ensure constants.js is correct
 
-// Initialize Sentiment Analyzer (AFINN is a good general-purpose one)
+// Initialize Sentiment Analyzer
 const language = "English";
-const stemmer = natural.PorterStemmer; // or LancasterStemmer
-const vocabulary = "afinn"; // AFINN provides a score from -5 to 5
+const stemmer = natural.PorterStemmer;
+const vocabulary = "afinn";
 const sentimentAnalyzer = new natural.SentimentAnalyzer(
   language,
   stemmer,
@@ -14,60 +14,60 @@ const sentimentAnalyzer = new natural.SentimentAnalyzer(
 );
 
 function getSentimentLabel(score) {
-  if (score > 0.3) return "positive"; // Threshold for positive
-  if (score < -0.3) return "negative"; // Threshold for negative
+  if (score > 0.3) return "positive";
+  if (score < -0.3) return "negative";
   return "neutral";
 }
 
+// MODIFIED SIGNATURE: Removed financialItemID and productName arguments
 function extractContextHighlights(
   textBody,
   ownerEmail,
   emailSubject,
-  emailMessageID,
-  financialItemID,
-  productName
+  emailMessageID
 ) {
-  if (!textBody) return [];
+  console.log(
+    `CONTEXT_EXTRACTOR: Starting extraction for Subject: "${emailSubject}", Owner: ${ownerEmail}`
+  );
+  if (!textBody || typeof textBody !== "string" || textBody.trim() === "") {
+    // Added more robust check for textBody
+    console.log(
+      "CONTEXT_EXTRACTOR: TextBody is empty or invalid. Returning empty highlights."
+    );
+    return [];
+  }
 
   const highlights = [];
   const sentences = sentenceTokenizer.tokenize(textBody);
-  let overallProductKeyword = null;
+  let overallProductKeywordFromEmail = null; // Product keyword identified for the entire email
 
-  // Determine overall product keyword for the email
+  // Determine an overall product keyword for the email by checking subject and then body
+  const combinedSubjectBodyForOverallKeyword =
+    emailSubject.toLowerCase() + " " + textBody.toLowerCase();
   for (const service of KNOWN_SERVICES) {
-    if (
-      emailSubject.toLowerCase().includes(service.toLowerCase()) ||
-      textBody.toLowerCase().includes(service.toLowerCase())
-    ) {
-      overallProductKeyword = service;
-      break;
+    if (combinedSubjectBodyForOverallKeyword.includes(service.toLowerCase())) {
+      overallProductKeywordFromEmail = service;
+      console.log(
+        `CONTEXT_EXTRACTOR: Overall product keyword for email identified as: "${overallProductKeywordFromEmail}"`
+      );
+      break; // Use the first one found as the primary for the email
     }
   }
 
-  sentences.forEach((sentence) => {
+  sentences.forEach((sentence, index) => {
     const lowerSentence = sentence.toLowerCase();
-    let sentenceProductKeyword = overallProductKeyword; // Default to overall
+    let productKeywordForThisHighlight = null; // Keyword specific to this sentence/highlight
 
-    // Refine product keyword if sentence is more specific
-    if (!sentenceProductKeyword) {
-      for (const service of KNOWN_SERVICES) {
-        if (lowerSentence.includes(service.toLowerCase())) {
-          sentenceProductKeyword = service;
-          break;
-        }
+    // 1. Try to find a KNOWN_SERVICE mentioned in *this specific sentence*
+    for (const service of KNOWN_SERVICES) {
+      if (lowerSentence.includes(service.toLowerCase())) {
+        productKeywordForThisHighlight = service;
+        break;
       }
-    } else {
-      let specificProductInSentence = false;
-      for (const service of KNOWN_SERVICES) {
-        if (lowerSentence.includes(service.toLowerCase())) {
-          sentenceProductKeyword = service; // Prefer product mentioned directly in sentence
-          specificProductInSentence = true;
-          break;
-        }
-      }
-      // If no specific product in sentence, but overall product exists, use that
-      if (!specificProductInSentence && overallProductKeyword)
-        sentenceProductKeyword = overallProductKeyword;
+    }
+    // 2. If no specific product in this sentence, but an overall product was identified for the email, use that.
+    if (!productKeywordForThisHighlight && overallProductKeywordFromEmail) {
+      productKeywordForThisHighlight = overallProductKeywordFromEmail;
     }
 
     let foundIndicator = false;
@@ -78,69 +78,72 @@ function extractContextHighlights(
       }
     }
 
-    if (
-      sentence.trim().length > 15 &&
-      sentence.trim().length < 400 &&
-      foundIndicator
-    ) {
-      // Only consider it a highlight if an indicator is present AND (a product is mentioned OR it's a strongly contextual sentence)
-      // For simplicity in MVP, let's say if an indicator is found, and there's *some* product context (even overall), it's a highlight.
-      if (
-        sentenceProductKeyword ||
-        CONTEXT_INDICATOR_KEYWORDS.some((ind) => lowerSentence.includes(ind))
-      ) {
-        const tokenizedSentence = new natural.WordTokenizer().tokenize(
-          lowerSentence
-        );
-        const sentimentScore =
-          sentimentAnalyzer.getSentiment(tokenizedSentence);
-        const sentiment = getSentimentLabel(sentimentScore);
+    // Debug log for each sentence considered
+    // console.log(`DEBUG_SENTENCE ${index + 1}: "${sentence.substring(0, 50)}..." ProductForSentence: ${productKeywordForThisHighlight}, IndicatorFound: ${foundIndicator}`);
 
-        highlights.push({
-          owner_email: ownerEmail,
-          product_keyword: sentenceProductKeyword, // May be null
-          highlight_text: sentence.trim(),
-          sentiment: sentiment, // Store the sentiment
-          source_email_subject: emailSubject,
-          source_email_message_id: emailMessageID,
-          financial_item_id: financialItemID,
-          product_name: productName,
-        });
-      }
+    // A highlight requires an indicator word.
+    // It's more valuable if also associated with a product keyword (either sentence-specific or email-overall).
+    if (
+      sentence.trim().length > 15 && // Basic length filter for meaningfulness
+      sentence.trim().length < 400 && // Avoid overly long "sentences"
+      foundIndicator // Must contain a context indicator
+    ) {
+      // If an indicator is found, we create a highlight.
+      // The product_keyword will be set if one was identified for the sentence or email.
+      const tokenizedSentence = new natural.WordTokenizer().tokenize(
+        lowerSentence
+      );
+      const sentimentScore = sentimentAnalyzer.getSentiment(tokenizedSentence);
+      const sentiment = getSentimentLabel(sentimentScore);
+
+      highlights.push({
+        owner_email: ownerEmail,
+        product_keyword: productKeywordForThisHighlight, // This can be null if no product context found for this specific highlight
+        highlight_text: sentence.trim(),
+        sentiment: sentiment,
+        source_email_subject: emailSubject,
+        source_email_message_id: emailMessageID,
+        // financial_item_id is NOT set here; linking is done in server.js
+      });
+      // console.log(`  -> ADDED HIGHLIGHT: Text: "${sentence.trim()}", Product: ${productKeywordForThisHighlight || 'N/A'}, Sentiment: ${sentiment}`);
     }
   });
 
-  // Fallback if no specific highlights but a product was mentioned
+  // Fallback: If absolutely no indicator-based highlights were found,
+  // but an overall product for the email was identified, and the email body is substantial,
+  // create one general context highlight for that product.
   if (
     highlights.length === 0 &&
-    overallProductKeyword &&
+    overallProductKeywordFromEmail &&
     textBody.length > 50 &&
-    textBody.length < 1000
+    textBody.length < 2000 // Limit fallback body length
   ) {
+    const fallbackText = `General discussion regarding ${overallProductKeywordFromEmail}: ${textBody
+      .substring(0, 250) // Take a snippet
+      .replace(/\s+/g, " ")
+      .trim()}...`;
     const tokenizedFallback = new natural.WordTokenizer().tokenize(
-      textBody.substring(0, 200).toLowerCase()
+      fallbackText.toLowerCase()
     );
     const fallbackSentimentScore =
       sentimentAnalyzer.getSentiment(tokenizedFallback);
     const fallbackSentiment = getSentimentLabel(fallbackSentimentScore);
+
     highlights.push({
       owner_email: ownerEmail,
-      product_keyword: overallProductKeyword,
-      highlight_text: `General context about ${overallProductKeyword}: ${textBody
-        .substring(0, 200)
-        .replace(/\s+/g, " ")
-        .trim()}...`,
+      product_keyword: overallProductKeywordFromEmail,
+      highlight_text: fallbackText,
       sentiment: fallbackSentiment,
       source_email_subject: emailSubject,
       source_email_message_id: emailMessageID,
     });
+    console.log(
+      `CONTEXT_EXTRACTOR: Added fallback highlight for product "${overallProductKeywordFromEmail}" as no specific highlights were found.`
+    );
   }
+
   console.log(
-    `CONTEXT_EXTRACTOR: Found ${
-      highlights.length
-    } highlights for email subject "${emailSubject}" with primary product keyword "${
-      overallProductKeyword || "N/A"
-    }"`
+    `CONTEXT_EXTRACTOR: Finished. Found ${highlights.length} total highlights for subject "${emailSubject}".`
   );
   return highlights;
 }
