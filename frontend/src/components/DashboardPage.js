@@ -16,7 +16,9 @@ import {
   Cell,
 } from "recharts";
 
-const API_URL = "http://localhost:3001";
+const API_URL = process.env.REACT_APP_API_URL;
+
+console.log("API_URL", API_URL);
 
 const PIE_COLORS = [
   "#00A9E0", // Vivid Blue

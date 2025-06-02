@@ -3,7 +3,7 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
 // Ensure this URL matches your Node.js backend's address and port
-const API_URL = "http://localhost:3001";
+const API_URL = process.env.REACT_APP_API_URL;
 
 function Signup() {
   const [email, setEmail] = useState("");
