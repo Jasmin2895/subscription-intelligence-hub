@@ -237,3 +237,171 @@ button[type="submit"]:active,
 .instructions a:hover {
   color: #4ca0e0; /* Darker accent on hover */
 }
+
+.financial-item .item-summary {
+  cursor: pointer;
+  padding: 15px; /* Add some padding to summary for better click area */
+  border-radius: 6px 6px 0 0; /* Round top corners if details are below */
+  transition: background-color 0.2s ease-in-out;
+  /* border-bottom: 1px solid #3a3f4b; */ /* Optional: separator before expanded details if any */
+}
+
+.financial-item .item-summary:hover {
+  background-color: #2a313c; /* Slightly lighter dark shade for hover */
+}
+
+.financial-item .item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.financial-item .item-header h3 {
+  margin: 0;
+  color: #e0e6f1; /* Light text for vendor name */
+  font-size: 1.25em;
+  flex-grow: 1; /* Allow title to take space */
+}
+
+.financial-item .item-price {
+  color: #4dd964; /* Bright Green for price */
+  font-weight: bold;
+  font-size: 1.15em;
+  white-space: nowrap; /* Prevent price from wrapping */
+  margin-left: 10px;
+}
+.financial-item .item-meta {
+  font-size: 0.9em;
+  color: #a8b2c1; /* Secondary text color */
+  display: flex;
+  justify-content: space-between; /* Spreads out Date and Cycle */
+  flex-wrap: wrap; /* Allows wrapping on small screens */
+  gap: 10px; /* Adds a small gap between Date/Cycle and Original Amount if they wrap */
+  margin-bottom: 8px;
+}
+.financial-item .item-meta p {
+  margin: 0; /* Remove default paragraph margins */
+}
+.financial-item .cycle {
+  /* No specific style needed if just part of the <p> */
+}
+.financial-item .original-amount {
+  font-size: 0.85em;
+  color: #718096; /* Muted gray */
+  /* display: block; */ /* If you want it on its own line */
+  margin-top: 2px;
+}
+
+.renewal-tag-container {
+  margin-top: 8px; /* Space above the tag if it appears */
+  margin-bottom: 8px; /* Space below tag before "Show Details" */
+}
+
+.renewal-tag {
+  display: inline-block;
+  background-color: #e53e3e; /* Red background for urgency */
+  color: white;
+  padding: 4px 10px;
+  border-radius: 12px; /* Pill shape */
+  font-size: 0.8em;
+  font-weight: bold;
+  margin-top: 5px; /* Space from other elements if needed */
+}
+
+.details-toggle {
+  font-size: 0.9em;
+  color: #63b3ed; /* Accent blue */
+  font-weight: 500;
+  display: inline-block; /* Or block if you want it on its own line */
+  margin-top: 10px;
+  padding: 5px 0px; /* Remove horizontal padding if it's just text */
+  border-radius: 5px;
+  transition: color 0.2s ease;
+}
+.details-toggle:hover {
+  color: #25c7d9; /* Brighter cyan on hover */
+}
+
+.item-details-expanded {
+  margin-top: 0px; /* Remove top margin if summary has bottom border */
+  padding: 20px 15px 15px 15px; /* Adjust padding */
+  border-top: 1px solid #3a3f4b; /* Separator line */
+  background-color: #20252e; /* Slightly different background for details */
+}
+
+.chart-card {
+  flex: 1 1 400px;
+  min-width: 300px;
+  background: #252c38;
+  padding: 20px 25px; /* Consistent padding */
+  border-radius: 10px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+  border: 1px solid #4a5568; /* gridStrokeColor */
+  margin-bottom: 20px; /* Space below charts if they stack */
+}
+
+.chart-title {
+  text-align: center;
+  margin-bottom: 25px;
+  color: #c2d0e3; /* Lighter text for chart titles */
+  font-size: 1.2rem;
+}
+
+/* Ensure your .ics-button styles from previous turns are present if you want that specific styling */
+.ics-button {
+  display: inline-block !important; /* Important if other styles conflict */
+  margin: 15px 0 !important;
+  padding: 10px 15px !important;
+  background-color: #48bb78 !important; /* Green for calendar button */
+  color: #1a1f2c !important; /* Dark text on green button */
+  text-decoration: none !important;
+  border-radius: 5px !important;
+  font-size: 0.9em !important;
+}
+.ics-button:hover {
+  background-color: #38a169 !important; /* Darker green */
+}
+
+/* Sentiment icon and text alignment improvements */
+.context-highlight {
+  display: flex;
+  align-items: flex-start; /* Aligns icon with the start of the text block */
+  margin-bottom: 12px !important;
+  padding: 12px !important;
+  border-radius: 6px !important; /* Softer corners */
+}
+.sentiment-icon {
+  margin-right: 12px; /* More space */
+  font-size: 1.3rem; /* Slightly larger icon */
+  line-height: 1.4; /* Align better with first line of text */
+}
+.context-highlight div {
+  /* The div wrapping the text and source */
+  flex: 1;
+}
+.context-highlight p {
+  margin: 0 0 4px 0 !important;
+  color: #e0e6f1;
+  line-height: 1.5;
+}
+.highlight-source {
+  display: block;
+  margin-top: 4px;
+  color: #8a96a8; /* Softer grey for source */
+  font-size: 0.8em;
+}
+
+/* Specific sentiment background/borders - ensure these are distinct enough in dark mode */
+.sentiment-positive {
+  background-color: rgba(77, 217, 100, 0.1);
+  border-left: 4px solid #4dd964;
+} /* Green */
+.sentiment-negative {
+  background-color: rgba(242, 94, 122, 0.1);
+  border-left: 4px solid #f25e7a;
+} /* Pink/Coral */
+.sentiment-neutral {
+  background-color: rgba(113, 128, 150, 0.1);
+  border-left: 4px solid #718096;
+} /* Muted Gray */
