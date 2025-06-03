@@ -45,7 +45,7 @@ function EmailEntryPage() {
           following dedicated Hub address:
         </p>
         <p className="email-address">
-          <strong>{appReceivingEmail}</strong>
+          <strong>postmtest06@gmail.com</strong>
         </p>
         <p>
           <small>
