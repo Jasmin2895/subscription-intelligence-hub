@@ -427,7 +427,7 @@ app.post("/webhook/email-inbound", async (req, res) => {
       finalSlackMessage += slackMessageParts
         .map((part) => `- ${part}`)
         .join("\n");
-      finalSlackMessage += `\n<http://localhost:3000/dashboard/${encodeURIComponent(
+      finalSlackMessage += `\n<${process.env.FRONTEND_URL}/${encodeURIComponent(
         ownerEmail
       )}|View Dashboard>`;
       await sendSlackNotification(finalSlackMessage);
@@ -440,7 +440,7 @@ app.post("/webhook/email-inbound", async (req, res) => {
         }${savedFinancialItem.amount_display?.toFixed(2) || "N/A"}, Cat: ${
           savedFinancialItem.category || "N/A"
         })` +
-          `\n<http://localhost:3000/dashboard/${encodeURIComponent(
+          `\n<${process.env.FRONTEND_URL}/${encodeURIComponent(
             ownerEmail
           )}|View Dashboard>`
       );
