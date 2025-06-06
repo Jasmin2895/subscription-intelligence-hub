@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start:backend": "node server.js"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +18,7 @@
     "ics": "^3.8.1",
     "natural": "^8.1.0",
     "openai": "^5.0.1",
+    "pdf-parse": "^1.1.1",
     "pg": "^8.16.0",
     "sqlite3": "^5.1.7",
     "uuid": "^11.1.0"

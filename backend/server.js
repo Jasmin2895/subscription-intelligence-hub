@@ -8,6 +8,7 @@ const { getStructuredDataFromEmail } = require("./services/openAiService");
 const { v4: uuidv4 } = require("uuid");
 const axios = require("axios"); // Keep for Slack if you use it later
 const ics = require("ics"); // Keep for calendar export
+const pdf = require("pdf-parse"); // MOVED TO TOP: Static import
 
 // --- Configuration from .env or defaults ---
 const POSTMARK_INBOUND_DOMAIN =
@@ -26,8 +27,8 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 console.log(
   `SERVER_LOG: App configured to receive emails at: ${FULL_APP_RECEIVING_EMAIL}`
@@ -46,11 +47,6 @@ if (!SLACK_WEBHOOK_URL && process.env.NODE_ENV !== "test") {
 
 // --- Slack Notification Function ---
 async function sendSlackNotification(message) {
-  // ... (Your existing Slack notification function from Turn 61 or previous)
-  // Ensure it's robust and checks if SLACK_WEBHOOK_URL is set.
-  // For brevity, not re-pasting the whole function if it's already in your file.
-  // Just ensure it uses 'fetch' as per your version or 'axios' if you prefer.
-  // The version from Turn 61 using fetch is:
   console.log("SLACK_LOG: Attempting to send notification...");
   if (!SLACK_WEBHOOK_URL) {
     console.log(
@@ -59,9 +55,8 @@ async function sendSlackNotification(message) {
     return;
   }
   try {
-    console.log(`SLACK_LOG: Sending payload to Slack: ${message}`); // Log the simple text message
-    const payload = { text: message }; // For simple text messages
-    // If using blocks, construct the blocks array and send that as JSON.stringify({ blocks: [...] })
+    console.log(`SLACK_LOG: Sending payload to Slack: ${message}`);
+    const payload = { text: message };
     const response = await fetch(SLACK_WEBHOOK_URL, {
       method: "POST",
       headers: {
@@ -90,6 +85,70 @@ app.post("/webhook/email-inbound", async (req, res) => {
     new Date(webhookReceivedTime).toISOString()
   );
   const emailData = req.body;
+
+  // --- ATTACHMENT PARSING LOGIC ---
+  let combinedTextBody = emailData.TextBody || "";
+  let attachmentInfoForSlack = [];
+
+  if (
+    emailData.Attachments &&
+    Array.isArray(emailData.Attachments) &&
+    emailData.Attachments.length > 0
+  ) {
+    console.log(
+      `WEBHOOK_LOG: Email contains ${emailData.Attachments.length} attachment(s).`
+    );
+
+    for (const attachment of emailData.Attachments) {
+      attachmentInfoForSlack.push(
+        `${attachment.Name} (${attachment.ContentType})`
+      );
+      try {
+        if (
+          attachment.ContentType.startsWith("text/") ||
+          attachment.ContentType === "application/json"
+        ) {
+          const decodedContent = Buffer.from(
+            attachment.Content,
+            "base64"
+          ).toString("utf8");
+
+          combinedTextBody += `\n\n--- ATTACHMENT CONTENT (${attachment.Name}) ---\n${decodedContent}`;
+          console.log(
+            `WEBHOOK_LOG: Extracted and appended text from attachment: ${attachment.Name}`
+          );
+        } else if (attachment.ContentType === "application/pdf") {
+          console.log(
+            `WEBHOOK_LOG: PDF attachment found: ${attachment.Name}. Attempting to parse...`
+          );
+          try {
+            // The 'pdf' module is now available globally in this file
+            const pdfBuffer = Buffer.from(attachment.Content, "base64");
+            const data = await pdf(pdfBuffer);
+            combinedTextBody += `\n\n--- ATTACHMENT CONTENT (from PDF: ${attachment.Name}) ---\n${data.text}`;
+            console.log(
+              `WEBHOOK_LOG: Successfully extracted text from PDF: ${attachment.Name}`
+            );
+          } catch (pdfError) {
+            // This catch now only handles errors from a corrupt PDF, not a missing module.
+            console.error(
+              `WEBHOOK_ERROR: Could not parse corrupt PDF '${attachment.Name}'. Error: ${pdfError.message}`
+            );
+          }
+        } else {
+          console.log(
+            `WEBHOOK_LOG: Skipping content extraction for attachment '${attachment.Name}' of type '${attachment.ContentType}'. This file type is not currently supported.`
+          );
+        }
+      } catch (e) {
+        console.error(
+          `WEBHOOK_ERROR: Failed to decode or process attachment ${attachment.Name}.`,
+          e
+        );
+      }
+    }
+  }
+  // --- END OF ATTACHMENT PARSING LOGIC ---
 
   let ownerEmail = null;
   if (
@@ -127,220 +186,142 @@ app.post("/webhook/email-inbound", async (req, res) => {
   let slackMessageParts = [];
 
   try {
-    const financialKeywords = [
-      "receipt",
-      "invoice",
-      "payment",
-      "bill",
-      "order",
-      "subscription",
-      "charge",
-      "confirm",
-    ];
-    const lowerSubject = (emailData.Subject || "").toLowerCase();
-    const lowerTextBody = (emailData.TextBody || "").toLowerCase();
-    let isPotentiallyFinancial = financialKeywords.some(
-      (kw) => lowerSubject.includes(kw) || lowerTextBody.includes(kw)
+    console.log(
+      "WEBHOOK_LOG: Attempting to parse email with OpenAI to identify financial data..."
+    );
+    const aiParsedData = await getStructuredDataFromEmail(
+      emailData.Subject,
+      combinedTextBody
     );
 
-    const commonVendors = [
-      "amazon",
-      "netflix",
-      "spotify",
-      "aws",
-      "zoom",
-      "microsoft",
-      "google",
-      "apple",
-    ]; // From your constants.js perhaps
-    if (!isPotentiallyFinancial && emailData.From) {
-      // Check sender if keywords not obvious
-      isPotentiallyFinancial = commonVendors.some(
-        (v) =>
-          emailData.From.toLowerCase().includes(v) &&
-          (lowerSubject.includes(v) || lowerTextBody.includes(v))
-      );
-    }
-
-    if (isPotentiallyFinancial) {
+    if (
+      aiParsedData &&
+      aiParsedData.vendor_name &&
+      aiParsedData.original_amount !== null
+    ) {
       console.log(
-        "WEBHOOK_LOG: Email seems potentially financial. Attempting OpenAI parse."
-      );
-      const aiParsedData = await getStructuredDataFromEmail(
-        emailData.Subject,
-        emailData.TextBody
+        "WEBHOOK_LOG: OpenAI successfully parsed financial data: Vendor: '%s', Amount: %s %s",
+        aiParsedData.vendor_name,
+        aiParsedData.original_amount,
+        aiParsedData.original_currency
       );
 
-      // Check if aiParsedData is not null and has essential fields before proceeding
-      if (
-        aiParsedData &&
-        aiParsedData.vendor_name &&
-        aiParsedData.original_amount !== null
-      ) {
-        console.log(
-          "WEBHOOK_LOG: OpenAI successfully parsed: Vendor: '%s', Amount: %s %s",
-          aiParsedData.vendor_name,
-          aiParsedData.original_amount,
-          aiParsedData.original_currency
-        );
-
-        // Date parsing and validation logic from Turn 55's openAiService (should ideally live there or a util)
-        let purchaseDateISO = null;
-        if (aiParsedData.purchase_date) {
-          if (/^\d{4}-\d{2}-\d{2}$/.test(aiParsedData.purchase_date)) {
-            const d = new Date(aiParsedData.purchase_date + "T00:00:00Z"); // Interpret as UTC date
-            if (!isNaN(d)) purchaseDateISO = d.toISOString();
-          } else {
-            // Attempt to re-parse if not YYYY-MM-DD
-            try {
-              const d = new Date(aiParsedData.purchase_date);
-              if (!isNaN(d.getTime())) {
-                let year = d.getFullYear();
-                const inputDateStr = String(aiParsedData.purchase_date);
-                if (
-                  year < 2000 &&
-                  (inputDateStr.match(/\/\d{2}$/) ||
-                    inputDateStr.match(/\-\d{2}$/) ||
-                    inputDateStr.match(/\.\d{2}$/))
-                ) {
-                  const twoDigitYear = parseInt(inputDateStr.slice(-2), 10);
-                  if (
-                    twoDigitYear >= 0 &&
-                    twoDigitYear <= (new Date().getFullYear() % 100) + 10
-                  )
-                    year = 2000 + twoDigitYear;
-                  else if (
-                    twoDigitYear > (new Date().getFullYear() % 100) + 10 &&
-                    twoDigitYear <= 99
-                  )
-                    year = 1900 + twoDigitYear;
-                  d.setFullYear(year);
-                }
-                purchaseDateISO = d.toISOString();
-              }
-            } catch (e) {
-              console.warn("Date re-parse error", e);
+      let purchaseDateISO = null;
+      if (aiParsedData.purchase_date) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(aiParsedData.purchase_date)) {
+          const d = new Date(aiParsedData.purchase_date + "T00:00:00Z");
+          if (!isNaN(d)) purchaseDateISO = d.toISOString();
+        } else {
+          try {
+            const d = new Date(aiParsedData.purchase_date);
+            if (!isNaN(d.getTime())) {
+              purchaseDateISO = d.toISOString();
             }
+          } catch (e) {
+            console.warn("Date re-parse error", e);
           }
         }
-        if (!purchaseDateISO)
-          purchaseDateISO = new Date(
-            emailData.Date || Date.now()
-          ).toISOString();
+      }
+      if (!purchaseDateISO)
+        purchaseDateISO = new Date(emailData.Date || Date.now()).toISOString();
 
-        let financialItemData = {
-          owner_email: ownerEmail,
-          vendor_name: aiParsedData.vendor_name,
-          product_name: aiParsedData.product_name,
-          original_amount: aiParsedData.original_amount,
-          original_currency: aiParsedData.original_currency
-            ? aiParsedData.original_currency.toUpperCase()
-            : null,
-          purchase_date: purchaseDateISO,
-          billing_cycle: aiParsedData.billing_cycle,
-          category: aiParsedData.category || "Other", // **Ensure category is included** and default if null
-          raw_email_subject: emailData.Subject,
-          source_email_message_id: emailData.MessageID,
-          amount_display: null,
-          currency_display: null,
-        };
+      let financialItemData = {
+        owner_email: ownerEmail,
+        vendor_name: aiParsedData.vendor_name,
+        product_name: aiParsedData.product_name,
+        original_amount: aiParsedData.original_amount,
+        original_currency: aiParsedData.original_currency
+          ? aiParsedData.original_currency.toUpperCase()
+          : null,
+        purchase_date: purchaseDateISO,
+        billing_cycle: aiParsedData.billing_cycle,
+        category: aiParsedData.category || "Other",
+        raw_email_subject: emailData.Subject,
+        source_email_message_id: emailData.MessageID,
+        amount_display: null,
+        currency_display: null,
+      };
 
-        // Currency Conversion
-        if (financialItemData.original_amount !== null) {
-          financialItemData.currency_display = "USD"; // Default display to USD
-          if (financialItemData.original_currency === "INR") {
-            financialItemData.amount_display = parseFloat(
-              (financialItemData.original_amount * INR_TO_USD_RATE).toFixed(2)
-            );
-          } else if (financialItemData.original_currency === "EUR") {
-            financialItemData.amount_display = parseFloat(
-              (financialItemData.original_amount * EUR_TO_USD_RATE).toFixed(2)
-            );
-          } else if (financialItemData.original_currency === "GBP") {
-            financialItemData.amount_display = parseFloat(
-              (financialItemData.original_amount * GBP_TO_USD_RATE).toFixed(2)
-            );
-          } else if (financialItemData.original_currency === "USD") {
-            financialItemData.amount_display =
-              financialItemData.original_amount;
-          } else if (financialItemData.original_currency) {
-            // Unrecognized but existing original currency
-            console.warn(
-              `WEBHOOK_WARN: Unrecognized original_currency '${financialItemData.original_currency}'. Using original values for display.`
-            );
-            financialItemData.amount_display =
-              financialItemData.original_amount;
-            financialItemData.currency_display =
-              financialItemData.original_currency;
-          } else {
-            // Amount exists, but original currency is null/unknown
-            console.warn(
-              `WEBHOOK_WARN: Original amount ${financialItemData.original_amount} found, but original_currency is null/unknown. Assuming and displaying as USD.`
-            );
-            financialItemData.amount_display =
-              financialItemData.original_amount;
-            // financialItemData.original_currency = "USD"; // Don't assume for original_currency field itself if truly unknown
-            financialItemData.currency_display = "USD";
-          }
-        }
-        // If financialItemData.original_amount was null, amount_display and currency_display remain null.
-
-        try {
-          savedFinancialItem = await db.addFinancialItem(financialItemData); // This function needs to handle 'category'
-          console.log(
-            `WEBHOOK_LOG: Financial Item (AI parsed) saved for ${ownerEmail}. ID: ${savedFinancialItem.id}. Category: ${savedFinancialItem.category}`
+      if (financialItemData.original_amount !== null) {
+        financialItemData.currency_display = "USD";
+        if (financialItemData.original_currency === "INR") {
+          financialItemData.amount_display = parseFloat(
+            (financialItemData.original_amount * INR_TO_USD_RATE).toFixed(2)
           );
-          slackMessageParts.push(
-            `🛍️ Parsed: ${savedFinancialItem.vendor_name} (${
-              savedFinancialItem.currency_display || ""
-            }${savedFinancialItem.amount_display?.toFixed(2) || "N/A"}, Cat: ${
-              savedFinancialItem.category || "N/A"
-            })`
+        } else if (financialItemData.original_currency === "EUR") {
+          financialItemData.amount_display = parseFloat(
+            (financialItemData.original_amount * EUR_TO_USD_RATE).toFixed(2)
           );
-        } catch (dbErr) {
-          // Check if error code indicates unique constraint violation (PostgreSQL: 23505)
-          if (
-            dbErr.code === "23505" ||
-            (dbErr.message &&
-              dbErr.message.toUpperCase().includes("UNIQUE CONSTRAINT") &&
-              dbErr.message.includes("source_email_message_id"))
-          ) {
-            console.log(
-              `WEBHOOK_LOG: Financial Item (AI parsed) from MessageID ${financialItemData.source_email_message_id} already exists. Fetching.`
-            );
-            const items = await db.getFinancialItemsByOwner(ownerEmail);
-            savedFinancialItem = items.find(
-              (it) =>
-                it.source_email_message_id ===
-                financialItemData.source_email_message_id
-            );
-            if (savedFinancialItem)
-              console.log(
-                `WEBHOOK_LOG: Found existing item ID: ${savedFinancialItem.id}`
-              );
-          } else {
-            console.error(
-              "WEBHOOK_ERROR: DB Error saving AI parsed financial item:",
-              dbErr
-            );
-            throw dbErr;
-          }
+        } else if (financialItemData.original_currency === "GBP") {
+          financialItemData.amount_display = parseFloat(
+            (financialItemData.original_amount * GBP_TO_USD_RATE).toFixed(2)
+          );
+        } else if (financialItemData.original_currency === "USD") {
+          financialItemData.amount_display = financialItemData.original_amount;
+        } else if (financialItemData.original_currency) {
+          console.warn(
+            `WEBHOOK_WARN: Unrecognized original_currency '${financialItemData.original_currency}'. Using original values for display.`
+          );
+          financialItemData.amount_display = financialItemData.original_amount;
+          financialItemData.currency_display =
+            financialItemData.original_currency;
+        } else {
+          console.warn(
+            `WEBHOOK_WARN: Original amount ${financialItemData.original_amount} found, but original_currency is null/unknown. Assuming and displaying as USD.`
+          );
+          financialItemData.amount_display = financialItemData.original_amount;
+          financialItemData.currency_display = "USD";
         }
-      } else {
+      }
+
+      try {
+        savedFinancialItem = await db.addFinancialItem(financialItemData);
         console.log(
-          "WEBHOOK_LOG: OpenAI did not return sufficient financial data (vendor/amount missing), or email not deemed financial by initial check."
+          `WEBHOOK_LOG: Financial Item saved for ${ownerEmail}. ID: ${savedFinancialItem.id}. Category: ${savedFinancialItem.category}`
         );
+        slackMessageParts.push(
+          `🛍️ Parsed: ${savedFinancialItem.vendor_name} (${
+            savedFinancialItem.currency_display || ""
+          }${savedFinancialItem.amount_display?.toFixed(2) || "N/A"}, Cat: ${
+            savedFinancialItem.category || "N/A"
+          })`
+        );
+      } catch (dbErr) {
+        if (
+          dbErr.code === "23505" ||
+          (dbErr.message &&
+            dbErr.message.toUpperCase().includes("UNIQUE CONSTRAINT"))
+        ) {
+          console.log(
+            `WEBHOOK_LOG: Financial Item from MessageID ${financialItemData.source_email_message_id} already exists. Fetching.`
+          );
+          const items = await db.getFinancialItemsByOwner(ownerEmail);
+          savedFinancialItem = items.find(
+            (it) =>
+              it.source_email_message_id ===
+              financialItemData.source_email_message_id
+          );
+          if (savedFinancialItem)
+            console.log(
+              `WEBHOOK_LOG: Found existing item ID: ${savedFinancialItem.id}`
+            );
+        } else {
+          console.error(
+            "WEBHOOK_ERROR: DB Error saving financial item:",
+            dbErr
+          );
+          throw dbErr;
+        }
       }
     } else {
       console.log(
-        "WEBHOOK_LOG: Email not identified as potentially financial. Skipping OpenAI financial parse."
+        "WEBHOOK_LOG: OpenAI did not return sufficient financial data. Assuming email is non-financial."
       );
     }
 
-    // Context Highlights Processing (using the "EVEN SAFER LINKING LOGIC" from Turn 59)
-    if (emailData.TextBody) {
+    if (combinedTextBody) {
       allExtractedHighlightsFromThisEmail = extractContextHighlights(
-        emailData.TextBody,
+        combinedTextBody,
         ownerEmail,
         emailData.Subject,
         emailData.MessageID
@@ -351,7 +332,7 @@ app.post("/webhook/email-inbound", async (req, res) => {
       console.log(
         `WEBHOOK_LOG: Extracted ${allExtractedHighlightsFromThisEmail.length} Context Highlight(s) for ${ownerEmail}.`
       );
-      let actuallyLinkedHighlightsCount = 0; // For Slack message
+      let actuallyLinkedHighlightsCount = 0;
       for (let highlight of allExtractedHighlightsFromThisEmail) {
         let itemToLinkTo = savedFinancialItem;
         if (!itemToLinkTo && highlight.product_keyword) {
@@ -393,10 +374,6 @@ app.post("/webhook/email-inbound", async (req, res) => {
             }' to FI ID ${financialItemIdForLinking}`
           );
           actuallyLinkedHighlightsCount++;
-        } else if (highlight.product_keyword) {
-          /* console.log(...) */
-        } else {
-          /* console.log(...) */
         }
 
         try {
@@ -419,7 +396,7 @@ app.post("/webhook/email-inbound", async (req, res) => {
         );
       }
     }
-    // ... (rest of your Slack notification logic and response sending as in Turn 61)
+
     if (slackMessageParts.length > 0) {
       let finalSlackMessage = `Update for *${ownerEmail}* (Re: ${
         emailData.Subject || "Email Processed"
@@ -427,19 +404,39 @@ app.post("/webhook/email-inbound", async (req, res) => {
       finalSlackMessage += slackMessageParts
         .map((part) => `- ${part}`)
         .join("\n");
+      if (attachmentInfoForSlack.length > 0) {
+        finalSlackMessage += `\n- 📎 Processed ${
+          attachmentInfoForSlack.length
+        } attachment(s): _${attachmentInfoForSlack.join(", ")}_`;
+      }
       finalSlackMessage += `\n<${process.env.FRONTEND_URL}/${encodeURIComponent(
         ownerEmail
       )}|View Dashboard>`;
       await sendSlackNotification(finalSlackMessage);
     } else if (savedFinancialItem) {
+      let baseMessage = `Update for *${ownerEmail}* (Re: ${
+        emailData.Subject || "Email Processed"
+      }):\n- 🛍️ Financial item parsed: ${savedFinancialItem.vendor_name} (${
+        savedFinancialItem.currency_display || ""
+      }${savedFinancialItem.amount_display?.toFixed(2) || "N/A"}, Cat: ${
+        savedFinancialItem.category || "N/A"
+      })`;
+      if (attachmentInfoForSlack.length > 0) {
+        baseMessage += `\n- 📎 Processed ${
+          attachmentInfoForSlack.length
+        } attachment(s): _${attachmentInfoForSlack.join(", ")}_`;
+      }
+      baseMessage += `\n<${process.env.FRONTEND_URL}/${encodeURIComponent(
+        ownerEmail
+      )}|View Dashboard>`;
+      await sendSlackNotification(baseMessage);
+    } else if (attachmentInfoForSlack.length > 0) {
       await sendSlackNotification(
         `Update for *${ownerEmail}* (Re: ${
           emailData.Subject || "Email Processed"
-        }):\n- 🛍️ Financial item parsed: ${savedFinancialItem.vendor_name} (${
-          savedFinancialItem.currency_display || ""
-        }${savedFinancialItem.amount_display?.toFixed(2) || "N/A"}, Cat: ${
-          savedFinancialItem.category || "N/A"
-        })` +
+        }):\n- 📎 Processed ${
+          attachmentInfoForSlack.length
+        } attachment(s): _${attachmentInfoForSlack.join(", ")}_` +
           `\n<${process.env.FRONTEND_URL}/${encodeURIComponent(
             ownerEmail
           )}|View Dashboard>`
@@ -478,13 +475,13 @@ app.get("/api/data/:ownerEmail/financial-items", async (req, res) => {
 
   console.log(`API_LOG: Fetching data for owner: ${ownerEmailParam}`);
   try {
-    const items = await db.getFinancialItemsByOwner(ownerEmailParam); // This SELECTS * so category is included
+    const items = await db.getFinancialItemsByOwner(ownerEmailParam);
     const itemsWithContext = [];
 
     for (const item of items) {
       let allHighlightsForItem = await db.getContextHighlightsForItem(item.id);
       const productKeywordForItem =
-        item.vendor_name || item.product_name || item.category; // Added category as a keyword source
+        item.vendor_name || item.product_name || item.category;
       if (productKeywordForItem) {
         const keywordHighlights =
           await db.getContextHighlightsByProductKeywordAndOwner(
@@ -512,17 +509,11 @@ app.get("/api/data/:ownerEmail/financial-items", async (req, res) => {
   }
 });
 
-// ICS Endpoint (Ensure this uses amount_display and currency_display for description)
+// ICS Endpoint
 app.get(
   "/api/data/:ownerEmail/financial-items/:itemId/ics",
   async (req, res) => {
     const { ownerEmail, itemId } = req.params;
-    // ... (rest of your ICS logic from Turn 57 or 61 is largely fine) ...
-    // Make sure inside the `event` description, you use `item.amount_display` and `item.currency_display`
-    // Example part of event description:
-    // description: `Reminder for ${item.vendor_name}. Cost: ${item.currency_display || '$'}${item.amount_display?.toFixed(2) || 'N/A'}.`,
-
-    // Full ICS logic from Turn 61 (with amount_display adjustment):
     const ownerEmailLower = ownerEmail ? ownerEmail.toLowerCase() : null;
     if (!ownerEmailLower || !itemId)
       return res
@@ -545,7 +536,6 @@ app.get(
             "Item is not a recurring subscription or has no valid date for renewal."
           );
       }
-      // ... (renewal date calculation as before)
       let nextRenewalDate;
       const purchaseDate = new Date(item.purchase_date);
       const now = new Date();
@@ -579,7 +569,7 @@ app.get(
         }`,
         description: `Reminder for ${item.vendor_name || "Unknown"}. Cost: ${
           item.currency_display || "$"
-        }${item.amount_display?.toFixed(2) || "N/A"}. From Hub.`, // UPDATED
+        }${item.amount_display?.toFixed(2) || "N/A"}. From Hub.`,
         start: [
           nextRenewalDate.getFullYear(),
           nextRenewalDate.getMonth() + 1,
@@ -620,7 +610,11 @@ app.get(
       );
       res.send(value);
     } catch (err) {
-      /* ... */
+      console.error(
+        `API_ERROR: ICS generation for ${ownerEmailLower}, item ${itemId}:`,
+        err
+      );
+      res.status(500).json({ error: "Failed to generate iCalendar file." });
     }
   }
 );

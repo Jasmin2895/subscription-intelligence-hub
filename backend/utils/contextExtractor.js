@@ -70,42 +70,47 @@ function extractContextHighlights(
       productKeywordForThisHighlight = overallProductKeywordFromEmail;
     }
 
-    let foundIndicator = false;
+    // [MODIFIED] Instead of a boolean, capture the specific keyword that was found
+    let matchedIndicator = null;
     for (const indicator of CONTEXT_INDICATOR_KEYWORDS) {
       if (lowerSentence.includes(indicator)) {
-        foundIndicator = true;
+        matchedIndicator = indicator; // Store the actual keyword
         break;
       }
     }
 
     // Debug log for each sentence considered
-    // console.log(`DEBUG_SENTENCE ${index + 1}: "${sentence.substring(0, 50)}..." ProductForSentence: ${productKeywordForThisHighlight}, IndicatorFound: ${foundIndicator}`);
+    // console.log(`DEBUG_SENTENCE ${index + 1}: "${sentence.substring(0, 50)}..." ProductForSentence: ${productKeywordForThisHighlight}, MatchedIndicator: ${matchedIndicator}`);
 
     // A highlight requires an indicator word.
     // It's more valuable if also associated with a product keyword (either sentence-specific or email-overall).
     if (
       sentence.trim().length > 15 && // Basic length filter for meaningfulness
       sentence.trim().length < 400 && // Avoid overly long "sentences"
-      foundIndicator // Must contain a context indicator
+      matchedIndicator // Must contain a context indicator
     ) {
       // If an indicator is found, we create a highlight.
-      // The product_keyword will be set if one was identified for the sentence or email.
       const tokenizedSentence = new natural.WordTokenizer().tokenize(
         lowerSentence
       );
       const sentimentScore = sentimentAnalyzer.getSentiment(tokenizedSentence);
       const sentiment = getSentimentLabel(sentimentScore);
 
+      // [ADDED] Clean the sentence to remove common email reply characters (e.g., '>')
+      const cleanedHighlightText = sentence.trim().replace(/^>\s*/, "");
+
+      // [MODIFIED] Add the matched indicator keyword to the stored object for more meaning
       highlights.push({
         owner_email: ownerEmail,
-        product_keyword: productKeywordForThisHighlight, // This can be null if no product context found for this specific highlight
-        highlight_text: sentence.trim(),
+        product_keyword: productKeywordForThisHighlight, // This can be null
+        highlight_text: cleanedHighlightText, // Use the cleaned text
+        indicator_keyword: matchedIndicator, // Store which keyword triggered this highlight
         sentiment: sentiment,
         source_email_subject: emailSubject,
         source_email_message_id: emailMessageID,
         // financial_item_id is NOT set here; linking is done in server.js
       });
-      // console.log(`  -> ADDED HIGHLIGHT: Text: "${sentence.trim()}", Product: ${productKeywordForThisHighlight || 'N/A'}, Sentiment: ${sentiment}`);
+      // console.log(`  -> ADDED HIGHLIGHT: Text: "${cleanedHighlightText}", Product: ${productKeywordForThisHighlight || 'N/A'}, Indicator: ${matchedIndicator}, Sentiment: ${sentiment}`);
     }
   });
 
@@ -129,10 +134,12 @@ function extractContextHighlights(
       sentimentAnalyzer.getSentiment(tokenizedFallback);
     const fallbackSentiment = getSentimentLabel(fallbackSentimentScore);
 
+    // [MODIFIED] Add indicator_keyword to provide context on this highlight's origin
     highlights.push({
       owner_email: ownerEmail,
       product_keyword: overallProductKeywordFromEmail,
       highlight_text: fallbackText,
+      indicator_keyword: "fallback_summary", // Explicitly label this as a general summary
       sentiment: fallbackSentiment,
       source_email_subject: emailSubject,
       source_email_message_id: emailMessageID,
