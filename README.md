@@ -93,6 +93,13 @@ cd ../client
 npm start
 ```
 
-**7. Forward Emails:**
+**7. Create .env file in client directory:**
+
+```bash
+cd client
+cp .env.example .env
+```
+
+**8. Forward Emails:**
 
 Forward your financial emails to the email address associated with your Postmark Server. The system will automatically process and display them on your dashboard.
