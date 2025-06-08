@@ -27,12 +27,12 @@ This application automatically parses your forwarded e-receipts and relevant dis
 ## 🚀 Tech Stack
 
 - **Backend:** Node.js, Express.js
-- **Database:** PostgreSQL (previously SQLite during early development)
+- **Database:** PostgreSQL
 - **Email Inbound Processing:** Postmark (via Inbound Webhook)
 - **AI for Financial Parsing:** OpenAI API (e.g., GPT-3.5-turbo, GPT-4)
 - **NLP for Context Extraction:** `natural` library (Node.js)
 - **Frontend:** React, React Router, Axios
-  - **Charting:** Recharts (or Chart.js if you opted for that)
+  - **Charting:** Recharts
 - **Real-time Local Development Tunneling:** `ngrok`
 - **Notifications:** Slack (via Incoming Webhooks)
 - **Calendar Export:** `ics` library (Node.js)
@@ -53,6 +53,46 @@ Follow these steps to get the project running locally:
 **1. Clone the Repository (if applicable):**
 
 ```bash
-git clone <your-repo-url>
-cd <your-repo-name>
+git clone <repo-url>
 ```
+
+**2. Install Dependencies:**
+
+```bash
+cd subscription-intelligence-hub
+npm install
+```
+
+**3. Set Up Environment Variables:**
+
+Switch to the `subscription-intelligence-hub` directory and then change the directory to `server` and create a `.env` file with the content from `.env.example`.
+
+```bash
+cd server
+cp .env.example .env
+```
+
+**4. Start the Server:**
+
+```bash
+npm run dev
+```
+
+**5. Expose Your Local Server to Postmark:**
+
+```bash
+ngrok http 3000
+```
+
+Copy the `ngrok` URL provided and update your Postmark Server's Inbound Webhook settings to point to this URL.
+
+**6. Start the Client:**
+
+```bash
+cd ../client
+npm start
+```
+
+**7. Forward Emails:**
+
+Forward your financial emails to the email address associated with your Postmark Server. The system will automatically process and display them on your dashboard.
