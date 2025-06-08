@@ -1,5 +1,4 @@
-// backend/services/openAiService.js
-require("dotenv").config(); // To load OPENAI_API_KEY from .env
+require("dotenv").config();
 const OpenAI = require("openai");
 
 const openai = new OpenAI({
@@ -71,7 +70,7 @@ async function getStructuredDataFromEmail(emailSubject, emailTextBody) {
   console.log("OPENAI_SERVICE: Sending prompt to OpenAI...");
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4.1", // Or your preferred model like "gpt-4-turbo-preview" if available & budget allows
+      model: "gpt-4.1",
       messages: [
         {
           role: "system",
@@ -79,8 +78,8 @@ async function getStructuredDataFromEmail(emailSubject, emailTextBody) {
         },
         { role: "user", content: prompt },
       ],
-      response_format: { type: "json_object" }, // For newer models that support JSON mode
-      temperature: 0.2, // Lower temperature for more deterministic output
+      response_format: { type: "json_object" },
+      temperature: 0.2,
     });
 
     const content = completion.choices[0]?.message?.content;
@@ -90,10 +89,9 @@ async function getStructuredDataFromEmail(emailSubject, emailTextBody) {
     }
 
     console.log("OPENAI_SERVICE: Received raw content:", content);
-    const structuredData = JSON.parse(content); // OpenAI (with JSON mode) should return valid JSON string
+    const structuredData = JSON.parse(content);
     console.log("OPENAI_SERVICE: Parsed structured data:", structuredData);
 
-    // Basic validation (can be expanded)
     if (typeof structuredData.price === "string") {
       structuredData.price = parseFloat(
         structuredData.price.replace(/[^0-9.-]+/g, "")
@@ -106,7 +104,6 @@ async function getStructuredDataFromEmail(emailSubject, emailTextBody) {
     ) {
       structuredData.currency = structuredData.currency.toUpperCase();
     } else if (structuredData.price !== null && !structuredData.currency) {
-      // Attempt to infer currency from common symbols if LLM missed it but gave a price.
       const bodyPlusSubject =
         (emailTextBody || "") + " " + (emailSubject || "");
       if (
@@ -127,13 +124,11 @@ async function getStructuredDataFromEmail(emailSubject, emailTextBody) {
       else if (bodyPlusSubject.includes("$")) structuredData.currency = "USD"; // Default $ to USD
     }
 
-    // Validate date format (YYYY-MM-DD)
     if (
       structuredData.purchase_date &&
       !/^\d{4}-\d{2}-\d{2}$/.test(structuredData.purchase_date)
     ) {
       try {
-        // Attempt to re-parse common date variations if not in YYYY-MM-DD
         const d = new Date(structuredData.purchase_date);
         if (!isNaN(d)) {
           structuredData.purchase_date = `${d.getFullYear()}-${String(

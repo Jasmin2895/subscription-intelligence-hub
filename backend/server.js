@@ -1,19 +1,17 @@
-// backend/server.js
-require("dotenv").config(); // Load .env file first
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const db = require("./database");
 const { extractContextHighlights } = require("./utils/contextExtractor");
 const { getStructuredDataFromEmail } = require("./services/openAiService");
 const { v4: uuidv4 } = require("uuid");
-const axios = require("axios"); // Keep for Slack if you use it later
-const ics = require("ics"); // Keep for calendar export
-const pdf = require("pdf-parse"); // MOVED TO TOP: Static import
+const axios = require("axios");
+const ics = require("ics");
+const pdf = require("pdf-parse");
 
-// --- Configuration from .env or defaults ---
 const POSTMARK_INBOUND_DOMAIN =
   process.env.POSTMARK_INBOUND_DOMAIN ||
-  "YOUR_UNIQUE_ID.inbound.postmarkapp.com"; // !!! REPLACE THIS !!!
+  "YOUR_UNIQUE_ID.inbound.postmarkapp.com";
 const APP_RECEIVING_EMAIL_PREFIX =
   process.env.APP_RECEIVING_EMAIL_PREFIX || "hub";
 const FULL_APP_RECEIVING_EMAIL = `${APP_RECEIVING_EMAIL_PREFIX}@${POSTMARK_INBOUND_DOMAIN}`;
@@ -39,13 +37,11 @@ if (!process.env.OPENAI_API_KEY) {
   );
 }
 if (!SLACK_WEBHOOK_URL && process.env.NODE_ENV !== "test") {
-  // Avoid warning during tests if Slack isn't focus
   console.warn(
     "SERVER_WARN: SLACK_WEBHOOK_URL not found in .env or empty. Slack notifications will be skipped."
   );
 }
 
-// --- Slack Notification Function ---
 async function sendSlackNotification(message) {
   console.log("SLACK_LOG: Attempting to send notification...");
   if (!SLACK_WEBHOOK_URL) {
@@ -77,7 +73,6 @@ async function sendSlackNotification(message) {
   }
 }
 
-// --- Webhook for Postmark ---
 app.post("/webhook/email-inbound", async (req, res) => {
   const webhookReceivedTime = Date.now();
   console.log(
@@ -86,7 +81,6 @@ app.post("/webhook/email-inbound", async (req, res) => {
   );
   const emailData = req.body;
 
-  // --- ATTACHMENT PARSING LOGIC ---
   let combinedTextBody = emailData.TextBody || "";
   let attachmentInfoForSlack = [];
 
@@ -122,7 +116,6 @@ app.post("/webhook/email-inbound", async (req, res) => {
             `WEBHOOK_LOG: PDF attachment found: ${attachment.Name}. Attempting to parse...`
           );
           try {
-            // The 'pdf' module is now available globally in this file
             const pdfBuffer = Buffer.from(attachment.Content, "base64");
             const data = await pdf(pdfBuffer);
             combinedTextBody += `\n\n--- ATTACHMENT CONTENT (from PDF: ${attachment.Name}) ---\n${data.text}`;
@@ -130,7 +123,6 @@ app.post("/webhook/email-inbound", async (req, res) => {
               `WEBHOOK_LOG: Successfully extracted text from PDF: ${attachment.Name}`
             );
           } catch (pdfError) {
-            // This catch now only handles errors from a corrupt PDF, not a missing module.
             console.error(
               `WEBHOOK_ERROR: Could not parse corrupt PDF '${attachment.Name}'. Error: ${pdfError.message}`
             );
@@ -148,7 +140,6 @@ app.post("/webhook/email-inbound", async (req, res) => {
       }
     }
   }
-  // --- END OF ATTACHMENT PARSING LOGIC ---
 
   let ownerEmail = null;
   if (
@@ -462,7 +453,6 @@ app.post("/webhook/email-inbound", async (req, res) => {
   }
 });
 
-// API Endpoint for Frontend (Make sure it returns category)
 app.get("/api/data/:ownerEmail/financial-items", async (req, res) => {
   const ownerEmailParam = req.params.ownerEmail
     ? req.params.ownerEmail.toLowerCase()
@@ -509,7 +499,6 @@ app.get("/api/data/:ownerEmail/financial-items", async (req, res) => {
   }
 });
 
-// ICS Endpoint
 app.get(
   "/api/data/:ownerEmail/financial-items/:itemId/ics",
   async (req, res) => {
